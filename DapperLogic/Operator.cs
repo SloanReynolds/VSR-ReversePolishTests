@@ -15,8 +15,8 @@ namespace DapperLogic {
 		public static Or Or = new Or();
 
 		public static List<Operator> All = new List<Operator>() {
-			//Or,Nor,And,Nand,Not,LeftParens,RightParens
-			Or,And,LeftParens,RightParens
+			Or,Nor,And,Nand,Not,LeftParens,RightParens
+			//Or,And,LeftParens,RightParens
 		};
 
 		public static bool IsValid(char chr) {

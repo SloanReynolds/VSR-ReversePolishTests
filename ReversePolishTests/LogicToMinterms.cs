@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using DapperLogic;
 using Spectre.Console;
 
@@ -44,10 +45,13 @@ namespace ReversePolishTests {
 
 		public LogicToMinterms(PostfixLogic postfixTokens, bool ignoreNegatives = false) {
 			PostfixLogic newList = new(postfixTokens);
-
+			if (!ignoreNegatives && !_HasNegativeLogic(postfixTokens)) {
+				ignoreNegatives = true;
+			}
 			_uniqueOperands.IgnoreNegatives = ignoreNegatives;
+
 			//Switch negative logic to "positive" symbols
-			if (!ignoreNegatives && _HasNegativeLogic(postfixTokens)) {
+			if (!ignoreNegatives) {
 				List<Token> uniqueNegatives = PostfixHelper.ConvertNotsToNegativeSymbols(ref newList);
 				_uniqueOperands.AddRangeNominal(uniqueNegatives);
 			}
@@ -96,7 +100,48 @@ namespace ReversePolishTests {
 			return negativeMask;
 		}
 
+		public List<Minterm> GetMinimalSet2() {
+			List<Minterm> choices = new List<Minterm>(_essentials);
+			List<Minterm> chosen = new List<Minterm>();
+
+			if (choices.Count == 1 && choices[0].Term == 0) {
+				chosen = choices;
+			} else {
+				int currentMask = 0;
+				int totalMask = _GetTotalMask(choices);
+
+				for (int i = 0; i < choices.Count; i++) {
+					if (currentMask == totalMask) break;
+
+					Minterm term = choices[i];
+					int newCurrent = term.Term | currentMask;
+
+					//Go through each choice- if it will change the currentMask, add it.
+					if (newCurrent != currentMask) {
+						chosen.Add(term);
+						currentMask = newCurrent;
+
+						//After it's added, go through all the already-chosen-choices and see if REMOVING would change the currentMask...
+						if (chosen.Count > 1) {
+							for (int j = 0; j < chosen.Count; j++) {
+								int maskWithout = _GetTotalMask(chosen.Except(new[] { chosen[j] }));
+								if (maskWithout == currentMask) {
+									chosen.RemoveAt(j);
+									j--;
+								}
+							}
+						}
+					}
+				}
+			}
+
+			_minimalSet = new List<Minterm>(chosen);
+			return chosen;
+		}
+
 		public List<Minterm> GetMinimalSet() {
+			_minimalSet = new List<Minterm>(_essentials);
+			return _essentials;
 			List<Minterm> choices = new List<Minterm>(_essentials);
 			List<Minterm> chosen = new List<Minterm>();
 
@@ -106,19 +151,9 @@ namespace ReversePolishTests {
 				int uniqueMask = 0;
 				int totalMask = 0;
 				while (true) {
-					uniqueMask = _GetMaskOfUniqueTerms(choices, uniqueMask);
-					if (uniqueMask == 0) break;
-
-					//if any of the choices left are entirely covered by the mask already been happened, we can safely removeth it.
-					for (int i = 0; i < choices.Count; i++) {
-						if (((choices[i].Term & ~totalMask) | uniqueMask) == uniqueMask) {
-							chosen.Add(choices[i]);
-							choices.RemoveAt(i);
-							i--;
-						}
-					}
-
-					totalMask |= uniqueMask;
+					//if (__version1(ref totalMask, ref uniqueMask)) break;
+					//if (__version2(ref totalMask, ref uniqueMask)) break;
+					if (__version1(ref totalMask, ref uniqueMask)) break;
 				}
 
 				if (choices.Count > 0) {
@@ -130,6 +165,79 @@ namespace ReversePolishTests {
 
 			_minimalSet = new List<Minterm>(chosen);
 			return chosen;
+
+			bool __version1(ref int totalMask, ref int uniqueMask) {
+				uniqueMask = _GetMaskOfUniqueTerms(choices, uniqueMask);
+				if (uniqueMask == 0)
+					return true;
+
+				//if any of the choices left are entirely covered by the mask already been happened, we can safely removeth it.
+
+				int currentMask = 0;
+				for (int i = 0; i < choices.Count; i++) {
+
+					if (((choices[i].Term & ~totalMask) | uniqueMask) == uniqueMask) {
+						chosen.Add(choices[i]);
+						currentMask = choices[i].Term | currentMask;
+						choices.RemoveAt(i);
+						for (int j = 0; j < chosen.Count; j++) {
+							int maskWithout = _GetTotalMask(chosen.Except(new[] { chosen[j] }));
+							if (maskWithout == currentMask) {
+								chosen.RemoveAt(j);
+								j--;
+							}
+						}
+						i--;
+					}
+				}
+
+				totalMask |= uniqueMask;
+				return false;
+			}
+
+			bool __version2(ref int totalMask, ref int uniqueMask) {
+				uniqueMask = _GetTotalMask(choices);
+				totalMask = 0;
+				if (uniqueMask == 0)
+					return true;
+
+				//if any of the choices left are entirely covered by the mask already been happened, we can safely removeth it.
+				for (int i = 0; i < choices.Count; i++) {
+					if ((choices[i].Term | uniqueMask) == uniqueMask) {
+						var newTotal = choices[i].Term | totalMask;
+						if (newTotal != totalMask) {
+							chosen.Add(choices[i]);
+							totalMask = newTotal;
+						}
+						choices.RemoveAt(i);
+						i--;
+					}
+				}
+
+				//totalMask |= uniqueMask;
+				return false;
+			}
+
+			bool __version3(ref int totalMask, ref int uniqueMask) {
+				//Go through each choice- if it will change the totalMask, add it.
+				//After it's added, go through all the already-chosen-choices and see if REMOVING would change the totalMask...
+
+				uniqueMask = 0;
+				totalMask = _GetTotalMask(choices);
+				for (int i = 0; i < choices.Count; i++) {
+
+				}
+
+				return true;
+			}
+		}
+
+		private int _GetTotalMask(IEnumerable<Minterm> choices) {
+			int totalMask = 0;
+			foreach (Minterm minterm in choices) {
+				totalMask |= minterm.Term;
+			}
+			return totalMask;
 		}
 
 		private int _GetMaskOfUniqueTerms(List<Minterm> choices, int ignoreMask) {

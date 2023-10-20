@@ -141,12 +141,12 @@ namespace DapperLogic {
 					//                                     i
 
 					//doDistribute
-					// "D", "C", "B", "A", "|", "&", "!", "|", "&", "B", "C", "D", "|", "&", "|"
-					//       |              |    |    |
-					//    child2         child1  |  token
-					//     find            i-2   |   i
-					//                         target
-					//                         i-1
+					// "D", "C",      "B", "A", "|",      "&", "!", "|", "&", "B", "C", "D", "|", "&", "|"
+					//       |                   |         |    |
+					//    child2              child1       |  token
+					//     find                 i-2        |    i
+					//                                   target
+					//                                   i-1
 					//                                          i
 					// "D", "C",      "B", "A", "|",      "&", "!", "|", "&", "B", "C", "D", "|", "&", "|"
 					//                                     i++=>i

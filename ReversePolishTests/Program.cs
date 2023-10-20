@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using DapperLogic;
 using Spectre.Console;
@@ -23,9 +24,106 @@ namespace ReversePolishTests {
 			// 2 2 1 4 4 3 3 2 2 1 0
 			{ }
 
+			//CompareImplicants(
+			//	"VYU & BSA | ~NBF & BSA | ~VYU & ~NBF",
+			//	"~VYU & ~NBF | VYU & BSA"
+			//, true);
+			//
+			//Console.ReadKey();
+
+			ReductionTests("");
+
 			//IsolatePhrase();
 
-			TestPositiveMinimizer("WALL_RUN");
+			//TestPositiveMinimizer("WALL_RUN");
+
+			Console.ReadKey();
+		}
+
+		private static bool CompareImplicants(string infix1, string infix2, bool getTable) {
+			bool result = CompareImplicants(infix1, infix2, getTable, out Table table);
+			if (getTable) {
+				AnsiConsole.Write(table);
+				Console.WriteLine();
+			}
+			return result;
+		}
+
+		private static bool CompareImplicants(string infix1, string infix2, bool getTable, out Table table) {
+			if (getTable) {
+				Console.WriteLine($"s1: '{infix1}'");
+				Console.WriteLine($"s2: '{infix2}'");
+			}
+
+			QuineMcCluskey qmc1 = new(InfixHelper.ToPostfixLogic(infix1));
+			QuineMcCluskey qmc2 = new(InfixHelper.ToPostfixLogic(infix2));
+
+			table = getTable ? new() : null;
+			table?.AddColumns("", "s1", "s2");
+
+			var list1 = qmc1.allTrueImplicants;
+			var list2 = qmc2.allTrueImplicants;
+			string header = "Minterms";
+
+			if (!_validateSection(table) && !getTable) {
+				return false;
+			}
+
+			list1 = qmc1.FullyCombine();
+			list2 = qmc2.FullyCombine();
+			header = "Implicants";
+
+			if (!_validateSection(table) && !getTable) {
+				return false;
+			}
+
+			list1 = qmc1.FullyExtractEssentials();
+			list2 = qmc2.FullyExtractEssentials();
+			header = "Primes";
+
+			if (!_validateSection(table) && !getTable) {
+				return false;
+			}
+
+			return true;
+
+			bool _validateSection(Table table) {
+				bool result = true;
+
+				var count1 = list1.Count();
+				var count2 = list2.Count();
+
+				if (getTable) {
+					table.AddRow(header, string.Join("\n", list1), string.Join("\n", list2));
+					table.AddRow("Count", count1.ToString(), count2.ToString());
+				}
+
+				if (count1 != count2) {
+					if (getTable) {
+						result = false;
+					} else {
+						return false;
+					}
+				}
+
+				var leftNew = list1.Except(list2);
+				var rightNew = list2.Except(list1);
+
+				if (leftNew.Count() > 0 || rightNew.Count() > 0) {
+					if (getTable) {
+						if (header == "Minterms") {
+							table.AddRow("Extras", string.Join("\n", leftNew.Select(imp => imp.Minterms[0])), string.Join("\n", rightNew.Select(imp => imp.Minterms[0])));
+						} else {
+							table.AddRow("Extras", string.Join("\n", leftNew), string.Join("\n", rightNew));
+						}
+						result = false;
+					} else {
+						return false;
+					}
+				}
+
+				return result;
+			}
 		}
 
 		private static void TestPositiveMinimizer(string v) {
@@ -39,28 +137,30 @@ namespace ReversePolishTests {
 
 		static void IsolatePhrase() {
 			string logicToIsolate = "A & B | C & D | A & C | (TARGET & H & D | H) & E & Z & A & B";
+			Console.WriteLine(logicToIsolate);
 			// A B & C D & A C & TARGET H & D & E & Z & A & B & | | |
 			// 2 2 1 3 3 2 4 4 3 9      9 8 8 7 7 6 6 5 5 4 4 3 2 1 0
 			PostfixLogic postfix = InfixHelper.ToPostfixLogic(logicToIsolate);
 			Console.WriteLine(postfix);
 			var nodeLog = postfix.NodeLogic;
 			var thing = nodeLog.NodesWithToken("TARGET");
-			PostfixLogic isolated = thing.First().ToPostfixLogic();
+			foreach (var iso in thing) {
+				Console.WriteLine(PostfixHelper.ToInfix(iso.ToPostfixLogic()));
+			}
 			{ }
 		}
 
-		static void ReductionTests() {
+		static void ReductionTests(string manualLogic = "") {
 			Maximize();
 
-			int uniqueTokens = 4;
-			int operandCount = 123;
+			int uniqueTokens = 10;
+			int operandCount = 51;
 			int parens = operandCount / 7;
 			bool positiveOnly = false;
 			bool pauseOnEach = false;
 			bool repeat = false;
-			bool pauseNext = false;
+			bool pauseNext = manualLogic != "" ? true : false;
 			string logic = "";
-			string manualLogic = "";
 
 			Stopwatch swQ = new Stopwatch();
 			Stopwatch swL = new Stopwatch();
@@ -79,7 +179,7 @@ namespace ReversePolishTests {
 
 			while (true) {
 				totalCount++;
-				PostfixLogic postfixListStuff;
+				PostfixLogic postfixList;
 				if (!repeat) {
 					seed = Rando.Next();
 				}
@@ -87,37 +187,30 @@ namespace ReversePolishTests {
 
 				if (manualLogic == "") {
 					logic = _MakeRandomLogic(positiveOnly, operandCount, 23, uniqueTokens, 2, seed);
-					postfixListStuff = InfixHelper.ToPostfixLogic(logic);
-					if (!positiveOnly) postfixListStuff = _AddRandomNots(postfixListStuff, operandCount / 7, seed);
+					postfixList = InfixHelper.ToPostfixLogic(logic);
 				} else {
 					logic = manualLogic;
 					manualLogic = "";
-					postfixListStuff = InfixHelper.ToPostfixLogic(logic);
-					PostfixHelper.RestoreNots(postfixListStuff);
+					postfixList = InfixHelper.ToPostfixLogic(logic);
 				}
 
-				//Console.WriteLine(string.Join(" ", postfixListStuff));
-				//Console.WriteLine(PostfixHelper.ToInfix(postfixListStuff));
-				//Console.WriteLine();
-				//Console.WriteLine(string.Join(" ", postfixListStuff));
-				//Console.WriteLine();
-				PostfixLogic postfixList = PostfixHelper.DistributeNots(postfixListStuff);
-				//Console.WriteLine(string.Join(" ", postfixList));
-				//Console.WriteLine();
-				Console.WriteLine(PostfixHelper.ToInfix(postfixList));
+				Console.WriteLine(logic);
 				Console.WriteLine();
 
-				string qmcPreSimplify = "";
-				string ltmPreSimplify = "";
-
+				Console.WriteLine(string.Join(" ", postfixList));
 				Console.WriteLine();
+
+				string qmcInfix = "";
+				string ltmInfix = "";
+
+				//Console.WriteLine();
 				string qTrueTerms = "";
 				string qPrimes = "";
 
 				if (true) {
 					swQ.Start();
 					Console.WriteLine("--------QMC--------");
-					QuineMcCluskey qmc = new QuineMcCluskey(postfixList);
+					QuineMcCluskey qmc = new QuineMcCluskey(postfixList, true);
 					if (true) {
 						qTrueTerms += "All Minterms\n";
 						qTrueTerms += string.Join("|", qmc.LTM.Tokens.Select(t => t.Symbol)) + "\n";
@@ -141,7 +234,7 @@ namespace ReversePolishTests {
 					//Console.WriteLine();
 					//Console.WriteLine("Becomes:");
 					//Console.WriteLine();
-					qmcPreSimplify = PostfixHelper.ToInfix(qPostfix);
+					qmcInfix = PostfixHelper.ToInfix(qPostfix);
 					//Console.WriteLine(qmcPreSimplify);
 					//Console.WriteLine();
 
@@ -198,7 +291,7 @@ namespace ReversePolishTests {
 					//Console.WriteLine();
 					//Console.WriteLine("Becomes:");
 					//Console.WriteLine();
-					ltmPreSimplify = PostfixHelper.ToInfix(lPostfix);
+					ltmInfix = PostfixHelper.ToInfix(lPostfix);
 					//Console.WriteLine(ltmPreSimplify);
 					//Console.WriteLine();
 
@@ -242,11 +335,15 @@ namespace ReversePolishTests {
 				);
 				AnsiConsole.Write(rable);
 
+				bool comparedImplicants = CompareImplicants(qmcInfix.Replace("! ", "~"), ltmInfix.Replace("! ", "~"), true, out Table tableCompare);
+
 				Console.WriteLine();
-				Console.WriteLine("[[QMC]] " + qmcPreSimplify.Replace("! ", "~"));
-				Console.WriteLine("[[LTM]] " + ltmPreSimplify.Replace("! ", "~"));
+				Console.WriteLine("[[INF]] " + logic);
+				Console.WriteLine("[[QMC]] " + qmcInfix.Replace("! ", "~"));
+				Console.WriteLine("[[LTM]] " + ltmInfix.Replace("! ", "~"));
 				Console.WriteLine();
 
+				Console.WriteLine();
 				AnsiConsole.Write(report);
 
 				Table fable = new Table();
@@ -255,29 +352,33 @@ namespace ReversePolishTests {
 				fable.AddRow("LTM", $"{swL.ElapsedMilliseconds}ms", $"{Math.Round(swL.ElapsedMilliseconds / (float)totalCount, 2)}ms");
 
 				AnsiConsole.Write(fable);
-
 				Console.WriteLine();
-				if (qmcPreSimplify.Length != ltmPreSimplify.Length) {
+
+				if (qmcInfix.Length != ltmInfix.Length) {
 					pauseNext = true;
+				} else {
+					if (!comparedImplicants) {
+						pauseNext = true;
+					}
 				}
 				if (pauseNext || pauseOnEach) {
 					do {
 						ConsoleKeyInfo key = Console.ReadKey();
+						Console.WriteLine();
 						if (key.Key == ConsoleKey.R) {
 							repeat = true;
 							pauseNext = true;
 							break;
-						}
-						if (key.Key == ConsoleKey.Y) {
+						} else if (key.Key == ConsoleKey.Y) {
 							pauseNext = true;
 							break;
-						}
-						if (key.Key == ConsoleKey.Spacebar) {
+						} else if (key.Key == ConsoleKey.Spacebar) {
 							pauseNext = false;
 							break;
-						}
-						if (key.Key == ConsoleKey.L) {
+						} else if (key.Key == ConsoleKey.I) {
+							AnsiConsole.Write(tableCompare);
 							Console.WriteLine();
+						} else if (key.Key == ConsoleKey.L) {
 							manualLogic = Console.ReadLine();
 							Console.WriteLine($">{manualLogic}<   ?");
 							var ket = Console.ReadKey();
@@ -292,8 +393,6 @@ namespace ReversePolishTests {
 				}
 			}
 			Console.WriteLine();
-
-
 
 			return;
 
@@ -1034,30 +1133,42 @@ namespace ReversePolishTests {
 
 			List<string> list = new List<string>();
 
+			bool needOperator = false;
+			int lastOperand = 0;
+
 			//Get a list of Letters.
 			while (list.Count < tokenCount) {
-				if (list.Count % 2 == 0) {
+				if (!needOperator) {
 					//Letter
 					list.Add(__RandOperand());
+					lastOperand = list.Count;
+					needOperator = true;
 				} else {
 					//Operator
-					list.Add(__RandOperator());
+					string op = __RandOperator();
+					if (op == "!") {
+						string op2 = __RandOperator(false);
+						list.Add(op2);
+					}
+					list.Add(op);
+					needOperator = false;
 				}
 			}
 
-			int opCount = (list.Count + 1) / 2;            // A | B = (3+1)/2 = 2
+			while (list.Count > lastOperand) {
+				list = list.GetRange(0, lastOperand);
+			}
+			tokenCount = list.Count;
 
 			//Get some pairs with which to randomly place some parentheses
 			List<int> pair1 = new List<int>();
 			List<int> pair2 = new List<int>();
 			while (pair1.Count < parensCount) {
-				int one = rnd.Next(opCount);
-				int two = rnd.Next(opCount);
+				int one = rnd.Next(tokenCount);
+				if (__isOp(list[one])) continue; //reject
+				int two = rnd.Next(tokenCount);
+				if (__isOp(list[two])) continue; //reject
 				if (one == two) continue; //reject
-
-				//Convert indexes to match with operands
-				one = one * 2;
-				two = two * 2;
 
 				pair1.Add(one < two ? one : two); //Low number first
 				pair2.Add(one > two ? one : two); //High number next!
@@ -1072,17 +1183,36 @@ namespace ReversePolishTests {
 				list[hi] = $"{list[hi]})";  //High number gets a ')'
 			}
 
+			//Console.WriteLine(string.Join(" ", list));
+
 			return string.Join(" ", list.ToArray());
 
 			string __RandOperand() {
 				return keyNames[rnd.Next(0, keyNames.Count)];
 			}
 
-			string __RandOperator() {
-				if (positiveOnly || rnd.Next(2) == 0) {
+			string __RandOperator(bool includeNots = true) {
+				int rand = rnd.Next(includeNots ? 5 : 4);
+				if (positiveOnly || rand == 0 || rand == 1) {
 					return rnd.Next(andToOrRatio + 1) == 0 ? "|" : "&";
 				}
+				if (rand == 4) {
+					return "!";
+				}
 				return rnd.Next(andToOrRatio + 1) == 0 ? ":" : "@";
+			}
+
+			bool __isOp(string token) {
+				switch (token) {
+					case "&":
+					case "|":
+					case "@":
+					case ":":
+					case "!":
+						return true;
+					default:
+						return false;
+				}
 			}
 		}
 

@@ -13,6 +13,7 @@ namespace ReversePolishTests {
 		private LogicToMinterms _LTM = null;
 		public LogicToMinterms LTM => _LTM;
 		public IEnumerable<Minterm> allTrue;
+		public IEnumerable<Implicant> allTrueImplicants;
 
 
 
@@ -20,8 +21,9 @@ namespace ReversePolishTests {
 			_LTM = new LogicToMinterms(postfixTokens, true);
 
 			allTrue = _LTM.GetMinterms().Where(m => m.Value);
+			allTrueImplicants = allTrue.Select(m => new Implicant(m)).Distinct().OrderBy(I => I.FirstTerm);
+			_subset = allTrueImplicants;
 
-			_subset = allTrue.Select(m => new Implicant(m)).Distinct().OrderBy(I => I.FirstTerm);
 			this._visualize = visualize;
 		}
 
@@ -29,6 +31,7 @@ namespace ReversePolishTests {
 
 		public QuineMcCluskey(IEnumerable<Minterm> terms, bool visualize = false) {
 			_subset = terms.Select(t => new Implicant(t)).Distinct().OrderBy(I => I.FirstTerm);
+
 			this._visualize = visualize;
 		}
 
@@ -91,7 +94,10 @@ namespace ReversePolishTests {
 
 			if (_visualize) _VizualizePrimeTable(remaining, remainingPrimes);
 
-			while (remaining.Count > 0) {
+			_essentialPrimes = _PetricksMethod(remainingPrimes);
+			return _essentialPrimes;
+
+			while (false && remaining.Count > 0) {
 				bool essentialsExtracted = false;
 
 				Bidex<Minterm, Implicant> bidex = _BuildBidex(remaining, remainingPrimes);
@@ -135,6 +141,53 @@ namespace ReversePolishTests {
 			return _essentialPrimes;
 		}
 
+		private List<Implicant> _PetricksMethod(List<Implicant> primes) {
+			int fullMask = _GetTotalMask(primes);
+			int impCount = primes.Count;
+			double maxImpMask = Math.Pow(2, impCount);
+
+			List<Implicant> bestCombo = primes; //0x1111111
+			int bestScore = impCount;
+
+			for (int i = 0; i < maxImpMask; i++) {
+				if (i.CountOnes() >= bestScore) //Same or worse # of items.
+					continue;
+				var newList = _BuildList(primes, i);
+				if (_GetTotalMask(newList) == fullMask) {
+					if (newList.Count < bestScore) {
+						bestCombo = newList;
+						bestScore = newList.Count;
+					}
+				}
+			}
+
+			return bestCombo;
+		}
+
+		private List<Implicant> _BuildList(List<Implicant> baseList, int mask) {
+			List<Implicant> newList = new();
+			int currentIndex = 0;
+			int currentVal = 0;
+			while (currentIndex < newList.Count() && currentVal > 0) {
+				if ((currentVal & 0b1) == 0b1) {
+					newList.Add(baseList[currentIndex]);
+				}
+				currentVal >>= 1;
+
+				currentIndex++;
+			}
+
+			return newList;
+		}
+
+		private int _GetTotalMask(List<Implicant> choices) {
+			int totalMask = 0;
+			foreach (Implicant imp in choices) {
+				totalMask |= imp.Mask;
+			}
+			return totalMask;
+		}
+
 		private Bidex<Minterm, Implicant> _BuildBidex(List<Minterm> remaining, List<Implicant> remainingPrimes) {
 			Bidex<Minterm, Implicant> bidex = new Bidex<Minterm, Implicant>();
 
@@ -158,7 +211,7 @@ namespace ReversePolishTests {
 		private void _VizualizePrimeTable(Bidex<Minterm, Implicant> bidex) {
 			var table = new Table();
 			table.AddColumn("");
-			table.AddColumns(bidex.LeftKeys.Select(r => new TableColumn($"{r.Term}")).ToArray());
+			table.AddColumns(bidex.LeftKeys.Select(r => new TableColumn($"{r.Term}")).Take(100).ToArray());
 			table.AddColumn("Score");
 
 			foreach (var implicant in bidex.RightKeys.OrderByDescending(i => i.Size)) {
@@ -168,6 +221,9 @@ namespace ReversePolishTests {
 				foreach (var minterm in bidex.LeftKeys) {
 					i++;
 					cols[i] = !implicant.Minterms.Contains(minterm) ? "" : bidex[minterm].Count == 1 ? "[green]x[/]" : $"{bidex[minterm].Count}";
+
+					if (i > table.Columns.Count - 2)
+						break;
 				}
 				cols[table.Columns.Count - 1] = $"{_GetScore(bidex, implicant)}";
 
@@ -250,7 +306,7 @@ namespace ReversePolishTests {
 		}
 	}
 
-	public class Implicant {
+	public class Implicant : IEquatable<Implicant> {
 		public List<Minterm> Minterms => _minterms;
 		private List<Minterm> _minterms = new List<Minterm>();
 		private int _mask = 0;
@@ -313,6 +369,39 @@ namespace ReversePolishTests {
 		private bool _IsPowerOfTwo(int num, out int mask) {
 			mask = num;
 			return (num & (num - 1)) == 0;
+		}
+
+
+
+		public override bool Equals(object obj) {
+			return this.Equals(obj as Implicant);
+		}
+
+		public bool Equals(Implicant other) {
+			return other is not null &&
+				   this.OnesCount == other.OnesCount &&
+				   this.FirstTerm == other.FirstTerm &&
+				   this.LastTerm == other.LastTerm &&
+				   this.Mask == other.Mask &&
+				   this.Size == other.Size;
+		}
+
+		public override int GetHashCode() {
+			int hashCode = 1659819406;
+			hashCode = hashCode * -1521134295 + this.OnesCount.GetHashCode();
+			hashCode = hashCode * -1521134295 + this.FirstTerm.GetHashCode();
+			hashCode = hashCode * -1521134295 + this.LastTerm.GetHashCode();
+			hashCode = hashCode * -1521134295 + this.Mask.GetHashCode();
+			hashCode = hashCode * -1521134295 + this.Size.GetHashCode();
+			return hashCode;
+		}
+
+		public static bool operator ==(Implicant left, Implicant right) {
+			return EqualityComparer<Implicant>.Default.Equals(left, right);
+		}
+
+		public static bool operator !=(Implicant left, Implicant right) {
+			return !(left == right);
 		}
 	}
 }

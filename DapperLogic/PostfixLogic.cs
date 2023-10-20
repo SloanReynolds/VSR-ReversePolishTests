@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 namespace DapperLogic {
 	public class PostfixLogic : List<Token> {
@@ -42,6 +43,10 @@ namespace DapperLogic {
 				_unique.Add(token);
 			}
 			return _unique.First(u => u == token);
+		}
+
+		public override string ToString() {
+			return string.Join(" ", this);
 		}
 
 

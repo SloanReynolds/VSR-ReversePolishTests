@@ -74,7 +74,8 @@ namespace DapperLogic {
 				postfix.Add(stack.Pop());
 			}
 
-			return postfix;
+			PostfixHelper.RestoreNots(postfix);
+			return PostfixHelper.DistributeNots(postfix);
 		}
 
 		public static List<Token> InfixToTokenList(string infix) {
